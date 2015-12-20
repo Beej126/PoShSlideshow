@@ -289,12 +289,12 @@ $script:frmImage.add_KeyDown($commands)
 
 $wshell = New-Object -ComObject Wscript.Shell -ErrorAction Stop
 
-
-if (!(test-path "$photoPath\AllFolders.txt")) {
-    dir -Recurse -Directory $photoPath -Exclude .* | select -ExpandProperty FullName | Out-File "$photoPath\AllFolders.txt" #nugget: -ExpandProperty prevents ellipsis on long strings 
+$folderCacheFile = "$photoPath\AllFolders_$(("shared", "local")[$photoPath -like "*:*"]).txt"
+if (!(test-path $folderCacheFile)) {
+    dir -Recurse -Directory $photoPath -Exclude .* | select -ExpandProperty FullName | Out-File $folderCacheFile #nugget: -ExpandProperty prevents ellipsis on long strings 
 }
 
-$folders = gc "$photoPath\AllFolders.txt" -Filter .hidden
+$folders = gc $folderCacheFile -Filter .*
 
 #fade and slide timer
 $script:timerAnimate = New-Object System.Windows.Forms.Timer
