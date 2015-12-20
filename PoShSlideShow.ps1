@@ -1,6 +1,8 @@
-﻿$photoPath = "D:\Photos\_Main_Library"
-#$photoPath = "\\BeejQuad\Photos"
-$timeout = 2 #minutes
+﻿param(
+  [string]$photoPath = "D:\Photos\_Main_Library",
+  #$photoPath = "\\BeejQuad\Photos"
+  [string]$timeout = 2 #minutes
+)
 
 <#
 Credit: Initial idea and windows forms screen code from here: https://github.com/adamdriscoll/PoshInternals
@@ -194,6 +196,9 @@ $script:pictureBox.Bounds = $screen.Bounds
 $script:idleTimer = New-Object System.Windows.Forms.Timer
 $script:idleTimer.Interval = 30000
 $script:idleTimer.add_Tick({
+
+  #$script:notifyIcon.ShowBalloonTip(1, "slideshow", "IdleTime.TotalMinutes: $([UserInput]::IdleTime.TotalMinutes)", [System.Windows.Forms.ToolTipIcon]::Info) 
+  
   if ([UserInput]::IdleTime.TotalMinutes -gt $script:timeout) {
   
     #pause timer since this is a long retrieval
@@ -343,27 +348,26 @@ $script:timerAnimate.add_Tick({
     }
 })
 
-function addMenuItem {
-  param( [string]$text, [scriptblock]$onClick )
-
-  $menuItem = New-Object System.Windows.Forms.MenuItem
-  $menuItem.Text = $text
-  $menuItem.add_Click( $onClick )
-
-  $contextMenu.MenuItems.Add($menuItem) | Out-Null
-
-  return $menuItem
-}
-
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSCommandPath)\icon.ico"
+#$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
 $notifyIcon.Visible = $true
 
-$contextMenu = New-Object System.Windows.Forms.ContextMenu
-$notifyIcon.ContextMenu = $contextMenu
+$notifyIcon.add_MouseDown( { 
+  #from: http://stackoverflow.com/questions/21076156/how-would-one-attach-a-contextmenustrip-to-a-notifyicon
+  #nugget: ContextMenu.Show() yields a known popup positioning bug... this trick leverages notifyIcons private method that properly handles positioning
+  if ($_.Button -ne [System.Windows.Forms.MouseButtons]::Left) {return}
+  [System.Windows.Forms.NotifyIcon].GetMethod("ShowContextMenu", [System.Reflection.BindingFlags] "NonPublic, Instance").Invoke($script:notifyIcon, $null)
+})
 
-addMenuItem "E&xit" { $notifyIcon.Visible = $false; [System.Windows.Forms.Application]::Exit() } | Out-Null
-$enableMenuItem = addMenuItem "Enable" { ToggleActive }
+$contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$contextMenu.ShowImageMargin = $false
+$contextMenu.Show
+$notifyIcon.ContextMenuStrip = $contextMenu
+$contextMenu.Parent = $notifyIcon
+$contextMenu.Items.Add( "Path: $photoPath", $null, $null ) | Out-Null
+$contextMenu.Items.Add( "E&xit", $null, { $notifyIcon.Visible = $false; [System.Windows.Forms.Application]::Exit() } ) | Out-Null
+$enableMenuItem = $contextMenu.Items.Add( "Enable", $null, { ToggleActive } )
 
 $script:idleTimer.Start()
 [System.Windows.Forms.Application]::Run()
