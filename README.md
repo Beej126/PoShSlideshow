@@ -14,7 +14,7 @@ Simply target a loca/LAN folder of images.
 * several **hotkeys** functional:
 	* <kbd>o</kbd>pen current image folder
 	* <kbd>c</kbd>opy current image to _My Photos_
-	* <kbd>r</kbd>otate current image (and save)
+	* <kbd>r</kbd>otate current image (and save) - *specifcally coded to honor EXIF rotation metadata where present but sometimes this gets lost*
 	* reverse to previously shown photo (<kbd>left cursor</kbd>)
 	* pause/play (<kbd>space</kbd>)
 	* hotkey legend pops up on any other keypress
