@@ -1,6 +1,5 @@
 ﻿param(
   [string]$photoPath = "D:\Photos\_Main_Library",
-  #$photoPath = "\\BeejQuad\Photos"
   [string]$timeout = 2 #minutes
 )
 
