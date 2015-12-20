@@ -1,6 +1,6 @@
 ﻿param(
   [string]$photoPath = "D:\Photos\_Main_Library",
-  [string]$timeout = 2 #minutes
+  [string]$idleTimeout = 2 #minutes
 )
 
 <#
@@ -198,7 +198,7 @@ $script:idleTimer.add_Tick({
 
   #$script:notifyIcon.ShowBalloonTip(1, "slideshow", "IdleTime.TotalMinutes: $([UserInput]::IdleTime.TotalMinutes)", [System.Windows.Forms.ToolTipIcon]::Info) 
   
-  if ([UserInput]::IdleTime.TotalMinutes -gt $script:timeout) {
+  if ([UserInput]::IdleTime.TotalMinutes -gt $script:idleTimeout) {
   
     #pause timer since this is a long retrieval
     $script:idleTimer.Stop()
@@ -278,7 +278,7 @@ $commands = {
         "Space" { if ($script:timerAnimate.Enabled) { $script:timerAnimate.Stop() } else {$script:timerAnimate.Start()}; }
 
         default {
-            $wshell.Popup("Keycode: $keycode`n`nESC - Exit`nO - Open folder`rC - [C]opy to 'My Pictures'`rM - Open [M]y Pictures folder`rR - Rotate`rLeft Cursor - Previous image`rRight Cursor - Next image`rSpace - Pause", 3 <#timeout#>, "Usage:", 4096 <#TopMost#> + 64 <#Information icon#>) 
+            $wshell.Popup("Keycode: $keycode`n`nESC - Exit`nO - Open folder`rC - [C]opy to 'My Pictures'`rM - Open [M]y Pictures folder`rR - Rotate`rLeft Cursor - Previous image`rRight Cursor - Next image`rSpace - Pause", 3 <#timeout seconds#>, "Usage:", 4096 <#TopMost#> + 64 <#Information icon#>) 
             $script:timerAnimate.Start()
 		}
     }
