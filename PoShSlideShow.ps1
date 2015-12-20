@@ -1,11 +1,34 @@
 ﻿param(
-  [string]$photoPath = "D:\Photos\_Main_Library",
+  [string]$photoPath = "\\beejquad\photos",
   [string]$idleTimeout = 2 #minutes
 )
 
 <#
 Credit: Initial idea and windows forms screen code from here: https://github.com/adamdriscoll/PoshInternals
 #>
+
+if ((Get-WmiObject Win32_Process -Filter "Name like 'powershell%' AND CommandLine like '%$(split-path $PSCommandPath -leaf)'").Count -gt 1) {
+    #$existingWindow = [win32]::FindWindowByCaption("PoShSlideShow")
+    #[Win32]::SetForegroundWindow($existingWindow)
+    #[Win32]::ShowWindow($existingWindow, 9 <#SW_SHOW#>)
+    exit
+}
+
+Add-Type -AssemblyName System.Windows.Forms
+
+[System.WIndows.Forms.Application]::EnableVisualStyles()
+try { [System.WIndows.Forms.Application]::SetCompatibleTextRenderingDefault($false) } catch { $Error.Clear() }
+
+$notifyIcon = New-Object System.Windows.Forms.NotifyIcon
+$notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSCommandPath)\icon.ico"
+#$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
+$notifyIcon.Visible = $true
+
+function cleanExit {
+  $notifyIcon.Visible = $false
+  [System.Windows.Forms.Application]::Exit()
+  exit
+}
 
 #Create a custom form with double buffering... otherwise each image would visibly repaint top to bottom a couple times... assuming because of the labels used for image path etc.
 #concept from here: http://www.winsoft.se/category/dotnet/powershell/
@@ -81,17 +104,16 @@ public static class UserInput {
 }
 '@} catch {$Error.Clear()}
 
-if ((Get-WmiObject Win32_Process -Filter "Name like 'powershell%' AND CommandLine like '%$(split-path $PSCommandPath -leaf)'").Count -gt 1) {
-    #$existingWindow = [win32]::FindWindowByCaption("PoShSlideShow")
-    #[Win32]::SetForegroundWindow($existingWindow)
-    #[Win32]::ShowWindow($existingWindow, 9 <#SW_SHOW#>)
-    exit
+function isElevated {
+  return (new-object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-[Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
+function showBalloon { param($message, $icon)
+  $script:notifyIcon.ShowBalloonTip(5000, "Slideshow", $message + ("", " - aborting")[$icon -eq "error"], ("Info", $icon)[!!($icon)])
+  if ($icon -eq "error") { start-sleep 5; cleanExit }
+}
 
-[System.WIndows.Forms.Application]::EnableVisualStyles()
-try { [System.WIndows.Forms.Application]::SetCompatibleTextRenderingDefault($false) } catch { $Error.Clear() }
+if (!(isElevated)) { showBalloon "Not running under elevated permissions" "error" }
 
 #from here: http://automagical.rationalmind.net/2009/08/25/correct-photo-orientation-using-exif/
 $script:rotationMap = @{}
@@ -195,38 +217,26 @@ $script:pictureBox.Bounds = $screen.Bounds
 $script:idleTimer = New-Object System.Windows.Forms.Timer
 $script:idleTimer.Interval = 30000
 $script:idleTimer.add_Tick({
-
-  #$script:notifyIcon.ShowBalloonTip(1, "slideshow", "IdleTime.TotalMinutes: $([UserInput]::IdleTime.TotalMinutes)", [System.Windows.Forms.ToolTipIcon]::Info) 
-  
   if ([UserInput]::IdleTime.TotalMinutes -gt $script:idleTimeout) {
-  
-    #pause timer since this is a long retrieval
+      #pause timer since this is a long retrieval
     $script:idleTimer.Stop()
     #only start if there's nothing currently running on the display
     #currently checking via heavy "powercfg" CLI call... would be nice to find a lighter approach
-    if ((powercfg /requests | select-string "DISPLAY:" -context 0,1).Context.PostContext -eq "None.") { ToggleActive; return }
+    $powerCfg = powercfg /requests
+    if ( $powerCfg | select-string "playing" -quiet `
+        -or ($powerCfg | select-string "DISPLAY:" -context 0,1).Context.PostContext -eq "None." ) { TogglePlay; return }
     $script:idleTimer.Start()
   }
 })
 
-<#
-$script:frmFade.add_Load({
-    #[System.Windows.Forms.Cursor]::Hide()
-    $script:frmImage.BringToFront()
-    $script:frmFade.BringToFront()
-    $script:frmFade.Hide()
 
-    ToggleActive
-})
-#>
-
-function ToggleActive {
+function TogglePlay {
   if ($script:frmFade.Visible) {
     $script:timerAnimate.Stop()
     $script:frmImage.Hide()
     $script:frmFade.Hide()
 
-    $script:idleTimer.Start()
+    if ($script:enableMenuItem.Text -eq "Disable Idle") { $script:idleTimer.Start() }
   }
   else {
     $script:idleTimer.Stop()
@@ -239,8 +249,6 @@ function ToggleActive {
     $script:animationMode = "showImage"
     $script:timerAnimate.Start()
   }
-
-  $script:enableMenuItem.Text = ("Enable", "Disable")[$script:frmFade.Visible]
 }
 
 $commands = {
@@ -260,8 +268,8 @@ $commands = {
 	#nugget: these windows control event handlers are in a different scope and thus need to reference all other global script variables as $script:var
 
     switch ($keycode) {
-        "Escape" { ToggleActive }
-        "O" { Invoke-Item $script:randomFile.DirectoryName; [System.Windows.Forms.Application]::Exit() }
+        "Escape" { TogglePlay }
+        "O" { Invoke-Item $script:randomFile.DirectoryName; cleanExit }
 
         "C" {
             copy-item $script:randomFile.FullName ($env:HOMEDRIVE+$env:Homepath+"\Pictures\"+($script:randomFile -replace "$photoPath\\", "" -replace "\\", "_"))
@@ -291,7 +299,13 @@ $wshell = New-Object -ComObject Wscript.Shell -ErrorAction Stop
 
 $folderCacheFile = "$photoPath\AllFolders_$(("shared", "local")[$photoPath -like "*:*"]).txt"
 if (!(test-path $folderCacheFile)) {
-    dir -Recurse -Directory $photoPath -Exclude .* | select -ExpandProperty FullName | Out-File $folderCacheFile #nugget: -ExpandProperty prevents ellipsis on long strings 
+  showBalloon "Creating folder cache: $folderCacheFile"
+  try {
+    dir -Recurse -Directory $photoPath -Exclude .* | select -ExpandProperty FullName | Out-File $folderCacheFile #nugget: -ExpandProperty prevents ellipsis on long strings
+  }
+  catch {
+    showBalloon "unable to create: $folderCacheFile" "error"
+  }
 }
 
 $folders = gc $folderCacheFile -Filter .*
@@ -347,11 +361,6 @@ $script:timerAnimate.add_Tick({
     }
 })
 
-$notifyIcon = New-Object System.Windows.Forms.NotifyIcon
-$notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSCommandPath)\icon.ico"
-#$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
-$notifyIcon.Visible = $true
-
 #open context menu on left mouse for convenience (right mouse works by default)
 $notifyIcon.add_MouseDown( { 
   if ($script:contextMenu.Visible) { $script:contextMenu.Hide(); return }
@@ -366,11 +375,16 @@ $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $contextMenu.ShowImageMargin = $false
 $contextMenu.Show
 $notifyIcon.ContextMenuStrip = $contextMenu
-$contextMenu.Parent = $notifyIcon
 $contextMenu.Items.Add( "Path: $photoPath", $null, $null ) | Out-Null
-$contextMenu.Items.Add( "E&xit", $null, { $notifyIcon.Visible = $false; [System.Windows.Forms.Application]::Exit() } ) | Out-Null
-$enableMenuItem = $contextMenu.Items.Add( "Enable", $null, { ToggleActive } )
+$contextMenu.Items.Add( "E&xit", $null, { cleanExit } ) | Out-Null
+
+$enableMenuItem = $contextMenu.Items.Add( "Disable Idle", $null, {
+  $script:enableMenuItem.Text = ("Enable Idle", "Disable Idle")[$script:enableMenuItem.Text -eq "Enable Idle"]
+  if(!$script:frmFade.Visible -and $script:enableMenuItem.Text -eq "Disable Idle") { $script:idleTimer.Start() }
+})
+
+$playMenu = $contextMenu.Items.Add( "Play", $null, { $script:playMenu.Text = ("Play", "Pause")[$script:playMenu.Text -eq "Play"]; TogglePlay } )
 
 $script:idleTimer.Start()
 [System.Windows.Forms.Application]::Run()
-if ($Error -ne $null) { pause }
+#if ($Error -ne $null) { pause }
