@@ -352,10 +352,13 @@ $notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSComma
 #$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
 $notifyIcon.Visible = $true
 
+#open context menu on left mouse for convenience (right mouse works by default)
 $notifyIcon.add_MouseDown( { 
+  if ($script:contextMenu.Visible) { $script:contextMenu.Hide(); return }
+  if ($_.Button -ne [System.Windows.Forms.MouseButtons]::Left) {return}
+
   #from: http://stackoverflow.com/questions/21076156/how-would-one-attach-a-contextmenustrip-to-a-notifyicon
   #nugget: ContextMenu.Show() yields a known popup positioning bug... this trick leverages notifyIcons private method that properly handles positioning
-  if ($_.Button -ne [System.Windows.Forms.MouseButtons]::Left) {return}
   [System.Windows.Forms.NotifyIcon].GetMethod("ShowContextMenu", [System.Reflection.BindingFlags] "NonPublic, Instance").Invoke($script:notifyIcon, $null)
 })
 
