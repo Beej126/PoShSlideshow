@@ -19,6 +19,7 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.WIndows.Forms.Application]::EnableVisualStyles()
 try { [System.WIndows.Forms.Application]::SetCompatibleTextRenderingDefault($false) } catch { $Error.Clear() }
 
+#fire up the task tray icon as quickly as possible to give the allusion of progress :)
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSCommandPath)\icon.ico"
 #$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
@@ -186,6 +187,28 @@ $script:frmFade.BackColor = "Black"
 $script:frmFade.ShowInTaskbar = $false
 $script:frmFade.TopMost = $true
 
+$leftLabel = New-Object System.Windows.Forms.Label
+$leftLabel.Font = New-Object System.Drawing.Font("Times New Roman",100,[System.Drawing.FontStyle]::Regular)
+$leftLabel.Text = "<"
+$leftLabel.ForeColor = "white"
+$leftLabel.Parent = $frmFade
+$leftLabel.Dock = "left"
+$leftLabel.add_Click({reverse})
+
+$btnPause = New-Object System.Windows.Forms.Panel
+$btnPause.Parent = $frmFade
+$btnPause.Dock = "fill"
+$btnPause.add_Click({TogglePause})
+$btnPause.add_DoubleClick({ToggleDisplay})
+
+$rightLabel = New-Object System.Windows.Forms.Label
+$rightLabel.Font = New-Object System.Drawing.Font("Times New Roman",100,[System.Drawing.FontStyle]::Regular)
+$rightLabel.Text = ">"
+$rightLabel.ForeColor = "white"
+$rightLabel.Parent = $frmFade
+$rightLabel.Dock = "right"
+$rightLabel.add_Click({forward})
+
 # the main form that holds the photo image content (and labels like the folder name)
 $script:frmImage = New-Object DoubleBufferedForm  #System.Windows.Forms.Form
 $script:frmImage.Name = "frmImage"
@@ -223,14 +246,16 @@ $script:idleTimer.add_Tick({
     #only start if there's nothing currently running on the display
     #currently checking via heavy "powercfg" CLI call... would be nice to find a lighter approach
     $powerCfg = powercfg /requests
-    if ( $powerCfg | select-string "playing" -quiet `
-        -or ($powerCfg | select-string "DISPLAY:" -context 0,1).Context.PostContext -eq "None." ) { TogglePlay; return }
+    if (
+      #this catches video streams that don't register as a Display request but do show under System as audio stream playing 
+      !($powerCfg | select-string "playing" -quiet) `
+      -or ($powerCfg | select-string "DISPLAY:" -context 0,1).Context.PostContext -eq "None." ) { ToggleDisplay; return }
     $script:idleTimer.Start()
   }
 })
 
 
-function TogglePlay {
+function ToggleDisplay {
   if ($script:frmFade.Visible) {
     $script:timerAnimate.Stop()
     $script:frmImage.Hide()
@@ -245,10 +270,42 @@ function TogglePlay {
     $script:frmFade.Show()
     $script:frmFade.Activate()
     $script:frmImage.Show()
+    $script:frmFade.BringToFront()
 
     $script:animationMode = "showImage"
     $script:timerAnimate.Start()
   }
+
+  $script:playMenu.Text = ("Play", "Pause")[$script:playMenu.Text -eq "Play"]; 
+}
+
+function pauseAnimation {
+  $script:frmFade.Opacity = 0.05
+  $script:timerAnimate.Stop()
+}
+
+function reverse {
+  if ($script:rewindIndex -gt 0) {
+    pauseAnimation
+    $script:randomFile = (gi $script:filesShown[(--$script:rewindIndex)])
+    showImage
+  }
+  else { showBalloon "at the beginning of image sequence" }
+}
+
+function forward {
+  if ($script:rewindIndex -lt ($script:filesShown.Count - 1)) {
+    pauseAnimation
+    $script:randomFile = (gi $script:filesShown[++$script:rewindIndex])
+    showImage
+  } 
+  else { $script:timerAnimate.Start() }
+
+  #$script:debugLabel.Text = $script:rewindIndex
+}
+
+function TogglePause {
+  if ($script:timerAnimate.Enabled) { pauseAnimation } else {$script:timerAnimate.Start()};
 }
 
 $commands = {
@@ -260,16 +317,15 @@ $commands = {
 
     if ($keycode -eq "Volume") {return}
 
-    $script:frmFade.Opacity = 0
-    $script:timerAnimate.Stop()
+    pauseAnimation
 
     #debug: $keyEventArgs | Format-List | Out-Host
 
-	#nugget: these windows control event handlers are in a different scope and thus need to reference all other global script variables as $script:var
+	#nugget: these event handlers run in their own separate scope and thus need to reference all other global script variables as $script:var
 
     switch ($keycode) {
-        "Escape" { TogglePlay }
-        "O" { Invoke-Item $script:randomFile.DirectoryName; cleanExit }
+        "Escape" { ToggleDisplay }
+        "O" { Invoke-Item $script:randomFile.DirectoryName; ToggleDisplay }
 
         "C" {
             copy-item $script:randomFile.FullName ($env:HOMEDRIVE+$env:Homepath+"\Pictures\"+($script:randomFile -replace "$photoPath\\", "" -replace "\\", "_"))
@@ -281,9 +337,9 @@ $commands = {
 
         "R" { $script:pictureBox.Image = $null; $script:img.RotateFlip([Drawing.RotateFlipType]::Rotate90FlipNone); $script:pictureBox.Image = $script:img; $script:img.Save($script:randomFile.FullName); }
 
-        "Left" { if ($script:rewindIndex -gt 0) { $script:randomFile = (gi $script:filesShown[(--$script:rewindIndex)]); showImage}; } #$script:debugLabel.Text = $script:rewindIndex 
-        "Right" { if ($script:rewindIndex -lt ($script:filesShown.Count - 1)) { $script:randomFile = (gi $script:filesShown[++$script:rewindIndex]); showImage; } else {$script:timerAnimate.Start();} } #$script:debugLabel.Text = $script:rewindIndex
-        "Space" { if ($script:timerAnimate.Enabled) { $script:timerAnimate.Stop() } else {$script:timerAnimate.Start()}; }
+        "Left" { reverse } 
+        "Right" { forward }
+        "Space" { TogglePause }
 
         default {
             $wshell.Popup("Keycode: $keycode`n`nESC - Exit`nO - Open folder`rC - [C]opy to 'My Pictures'`rM - Open [M]y Pictures folder`rR - Rotate`rLeft Cursor - Previous image`rRight Cursor - Next image`rSpace - Pause", 3 <#timeout seconds#>, "Usage:", 4096 <#TopMost#> + 64 <#Information icon#>) 
@@ -293,7 +349,6 @@ $commands = {
 }
 
 $script:frmFade.add_KeyDown($commands)
-$script:frmImage.add_KeyDown($commands)
 
 $wshell = New-Object -ComObject Wscript.Shell -ErrorAction Stop
 
@@ -337,7 +392,7 @@ $script:timerAnimate.add_Tick({
         }
         "fadeIn" {
             #fade in the new image
-            if ($script:frmFade.Opacity -gt 0) { $script:frmFade.Opacity -= 0.05 }
+            if ($script:frmFade.Opacity -gt 0.05) { $script:frmFade.Opacity -= 0.05 }
             else {
                 $script:slideDirection = random -input (1,-1),(1,1),(-1,1),(-1,-1)
                 $script:slideCount = 0
@@ -373,7 +428,6 @@ $notifyIcon.add_MouseDown( {
 
 $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $contextMenu.ShowImageMargin = $false
-$contextMenu.Show
 $notifyIcon.ContextMenuStrip = $contextMenu
 $contextMenu.Items.Add( "Path: $photoPath", $null, $null ) | Out-Null
 $contextMenu.Items.Add( "E&xit", $null, { cleanExit } ) | Out-Null
@@ -383,7 +437,7 @@ $enableMenuItem = $contextMenu.Items.Add( "Disable Idle", $null, {
   if(!$script:frmFade.Visible -and $script:enableMenuItem.Text -eq "Disable Idle") { $script:idleTimer.Start() }
 })
 
-$playMenu = $contextMenu.Items.Add( "Play", $null, { $script:playMenu.Text = ("Play", "Pause")[$script:playMenu.Text -eq "Play"]; TogglePlay } )
+$playMenu = $contextMenu.Items.Add( "Play", $null, { ToggleDisplay } )
 
 $script:idleTimer.Start()
 [System.Windows.Forms.Application]::Run()
