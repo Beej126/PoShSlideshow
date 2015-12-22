@@ -18,6 +18,10 @@ Simply target a local/LAN folder of images.
 	* reverse to previously shown photo (<kbd>left cursor</kbd>)
 	* pause/play (<kbd>space</kbd>)
 	* hotkey legend pops up on any other keypress
+* screen click functions:
+	* double click in center hides slideshow
+	* single click in center pauses slideshow
+	* click arrows on far left and right for prev/next image
 * skips _.hidden_ folders
 * open to modification - it's just PowerShell :) no compiling tools required
 
