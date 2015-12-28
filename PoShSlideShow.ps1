@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$photoPath = "\\beejquad\photos",
+  [string]$photoPath = "D:\Photos\_Main_Library",
   [string]$idleTimeout = 2 #minutes
 )
 
@@ -27,6 +27,8 @@ $notifyIcon.Visible = $true
 
 function cleanExit {
   $notifyIcon.Visible = $false
+  #save the updated folder datestamps to be reloaded next time we start up and keep our randomization fresh
+  $folders | export-csv $folderCacheFile -Encoding Unicode #nugget: without -encoding sometimes yielded binary garbage 
   [System.Windows.Forms.Application]::Exit()
   exit
 }
@@ -131,28 +133,40 @@ $script:filesShown = New-Object collections.arraylist
 $script:rewindIndex = ($script:filesShown.Count - 1)
 
 function showImage() {
-    $script:img = $nul
+  $script:img = $null
+  if ($script:pictureBox.Image -ne $null) { $script:pictureBox.Image.Dispose() }
+  $script:pictureBox.Image = $null
+  $script:pictureBox.Hide()
+
+  #video?
+  if ($script:randomFile.Extension -ne ".jpg") {
+    $script:frmFade.Opacity = 0.001
+    start-process -WindowStyle Hidden -wait -filepath vlc -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
+    $script:frmFade.Opacity = 1
+    $script:frmFade.BringToFront()
+    #$script:frmFade.Activate()
+    $script:timerAnimate.Start()
+  }
+
+  #static image
+  else {
 
     try {
-        $script:img = [system.drawing.image]::FromFile($script:randomFile.FullName)
+      $script:img = [system.drawing.image]::FromFile($script:randomFile.FullName)
     }
     catch {
-        $Error.Clear()
-        return
+      $Error.Clear()
+      return
     }
     
     #EXIF Spec: https://web.archive.org/web/20131207065832/http://exif.org/Exif2-2.PDF
     $EXIForientation = 274
 
     if ($script:img.PropertyIdList -contains $EXIForientation) {
-        try { 
-            $script:img.RotateFlip($script:rotationMap[[string]$script:img.GetPropertyItem($EXIForientation).Value[0]])
-        }
-        catch {$Error.Clear()}
-    }
-
-    if ($script:pictureBox.Image -ne $null) { 
-        $script:pictureBox.Image.Dispose()
+      try { 
+        $script:img.RotateFlip($script:rotationMap[[string]$script:img.GetPropertyItem($EXIForientation).Value[0]])
+      }
+      catch {$Error.Clear()}
     }
 
     $script:pictureBox.Left = 0
@@ -161,6 +175,10 @@ function showImage() {
     $imagePathLabel.Text = $script:randomFile.FullName.Replace("$photoPath\", "")
 
     $script:pictureBox.Image = $script:img
+    $script:pictureBox.Show()
+    $script:animationMode = "fadeIn"
+  }
+
 }
 
 function addLabel([string] $text) {
@@ -187,6 +205,14 @@ $script:frmFade.BackColor = "Black"
 $script:frmFade.ShowInTaskbar = $false
 $script:frmFade.TopMost = $true
 
+$rightLabel = New-Object System.Windows.Forms.Label
+$rightLabel.Font = New-Object System.Drawing.Font("Times New Roman",100,[System.Drawing.FontStyle]::Regular)
+$rightLabel.Text = ">"
+$rightLabel.ForeColor = "white"
+$rightLabel.Parent = $frmFade
+$rightLabel.Dock = "left"
+$rightLabel.add_Click({forward})
+
 $leftLabel = New-Object System.Windows.Forms.Label
 $leftLabel.Font = New-Object System.Drawing.Font("Times New Roman",100,[System.Drawing.FontStyle]::Regular)
 $leftLabel.Text = "<"
@@ -200,14 +226,6 @@ $btnPause.Parent = $frmFade
 $btnPause.Dock = "fill"
 $btnPause.add_Click({TogglePause})
 $btnPause.add_DoubleClick({ToggleDisplay})
-
-$rightLabel = New-Object System.Windows.Forms.Label
-$rightLabel.Font = New-Object System.Drawing.Font("Times New Roman",100,[System.Drawing.FontStyle]::Regular)
-$rightLabel.Text = ">"
-$rightLabel.ForeColor = "white"
-$rightLabel.Parent = $frmFade
-$rightLabel.Dock = "right"
-$rightLabel.add_Click({forward})
 
 # the main form that holds the photo image content (and labels like the folder name)
 $script:frmImage = New-Object DoubleBufferedForm  #System.Windows.Forms.Form
@@ -228,13 +246,8 @@ $script:pictureBox.SizeMode = "Zoom"
 #$script:pictureBox.BackgroundImageLayout = "Zoom" # None, Tile, Center, Stretch, Zoom
 $script:pictureBox.BackColor = "Black"
 $script:pictureBox.Parent = $script:frmImage
-
-# dock=fill to easily set automatic bounds then remove docking so that pictureBox can be "slid"
-#$script:pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-#$bounds = $script:pictureBox.Bounds
-#$script:pictureBox.Dock = [System.Windows.Forms.DockStyle]::None
-$script:pictureBox.Bounds = $screen.Bounds
-#$script:pictureBox.Width += 125
+$script:pictureBox.Bounds = $frmImage.Bounds
+#$script:pictureBox.Width += 125 #a little bigger than screen to allow for sliding animation - caused significant slowdown while sliding... assuming clipping math is more complex
 #$script:pictureBox.Height += 125
 
 $script:idleTimer = New-Object System.Windows.Forms.Timer
@@ -299,7 +312,10 @@ function forward {
     $script:randomFile = (gi $script:filesShown[++$script:rewindIndex])
     showImage
   } 
-  else { $script:timerAnimate.Start() }
+  else {
+    $script:animationMode = "showimage"
+    $script:timerAnimate.Start()
+  }
 
   #$script:debugLabel.Text = $script:rewindIndex
 }
@@ -328,12 +344,13 @@ $commands = {
         "O" { Invoke-Item $script:randomFile.DirectoryName; ToggleDisplay }
 
         "C" {
-            copy-item $script:randomFile.FullName ($env:HOMEDRIVE+$env:Homepath+"\Pictures\"+($script:randomFile -replace "$photoPath\\", "" -replace "\\", "_"))
-            $wshell.Popup("File copied successfully", 1, "Screensaver", 4096 <#TopMost#> + 64 <#Information icon#>)
+            $destination = $env:HOMEDRIVE+$env:Homepath+"\Pictures\"+$script:randomFile.FullName.Replace("$photoPath\", "").Replace("\", "_")
+            copy-item $script:randomFile.FullName $destination
+            showBalloon "File copied successfully:`n$destination"
             $script:timerAnimate.Start()
         }
 
-        "M" { Invoke-Item ($env:HOMEDRIVE+$env:Homepath+"\Pictures\") }
+        "M" { Invoke-Item ($env:HOMEDRIVE+$env:Homepath+"\Pictures\"); ToggleDisplay }
 
         "R" { $script:pictureBox.Image = $null; $script:img.RotateFlip([Drawing.RotateFlipType]::Rotate90FlipNone); $script:pictureBox.Image = $script:img; $script:img.Save($script:randomFile.FullName); }
 
@@ -356,14 +373,17 @@ $folderCacheFile = "$photoPath\AllFolders_$(("shared", "local")[$photoPath -like
 if (!(test-path $folderCacheFile)) {
   showBalloon "Creating folder cache: $folderCacheFile"
   try {
-    dir -Recurse -Directory $photoPath -Exclude .* | select -ExpandProperty FullName | Out-File $folderCacheFile #nugget: -ExpandProperty prevents ellipsis on long strings
+    #nugget: -ExpandProperty prevents ellipsis on long strings
+    $folders = dir -Recurse -Directory $photoPath -Exclude .* | select @{Name="lastShown"; expression={[datetime]0}}, @{Name="path"; expression={$_.FullName}}
+    $folders | Export-Csv $folderCacheFile
   }
   catch {
-    showBalloon "unable to create: $folderCacheFile" "error"
+    showBalloon "unable to create: $folderCacheFile`n`n$Error" "error"
   }
 }
-
-$folders = gc $folderCacheFile -Filter .*
+else {
+  $folders = import-csv $folderCacheFile | select @{Name="lastShown"; expression={[datetime]$_.lastShown}},path
+}
 
 #fade and slide timer
 $script:timerAnimate = New-Object System.Windows.Forms.Timer
@@ -381,13 +401,22 @@ $script:timerAnimate.add_Tick({
         }
         "showImage" {
             $script:timerAnimate.Stop()
-            do {$script:randomFile = gci ($folders | random) -file -Recurse -Include *.jpg | random } until ($script:randomFile -ne $null)
+
+            #get next random folder... that we haven't seen for XX days
+            do { $folder = $folders | random } until ($folder.lastShown -lt [DateTime]::UtcNow.AddMonths(-1) )
+            $folder.lastShown = [DateTime]::UtcNow
+
+            #nugget: http://stackoverflow.com/questions/790796/confused-with-include-parameter-of-the-get-childitem-cmdlet
+            #-recurse would basically work without the wildcard tacked on to the path... but then it digs into subfolders undesirably for this use case
+            #adding the wildcard allows the -include to apply to the contentss... otherwise the -include operates on the path vs the contents
+            #-filter is another option, but it only applies to a single extension
+            $script:randomFile = gci $folder.path -File | random 
             $script:filesShown.Add($script:randomFile.FullName)
             $script:rewindIndex = ($script:filesShown.Count - 1)
             #$script:debugLabel.Text = $script:rewindIndex
 
             showImage
-            $script:animationMode = "fadeIn"
+
             $script:timerAnimate.Start()
         }
         "fadeIn" {
@@ -441,4 +470,4 @@ $playMenu = $contextMenu.Items.Add( "Play", $null, { ToggleDisplay } )
 
 $script:idleTimer.Start()
 [System.Windows.Forms.Application]::Run()
-#if ($Error -ne $null) { pause }
+if ($Error -ne $null) { showBalloon $Error "error" }
