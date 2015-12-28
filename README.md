@@ -18,12 +18,17 @@ Simply target a local/LAN folder of images.
 	* reverse to previously shown photo (<kbd>left cursor</kbd>)
 	* pause/play (<kbd>space</kbd>)
 	* hotkey legend pops up on any other keypress
+* screen click functions:
+	* double click in center hides slideshow
+	* single click in center pauses slideshow
+	* click arrows on far left and right for prev/next image
 * skips _.hidden_ folders
 * open to modification - it's just PowerShell :) no compiling tools required
 
 #### Install - basically just launch the ps1... here's some tips:
 1. only the ps1 and ico files are needed, download them to a folder
 1. (see screenshot below) **create a shortcut** to the ps1 and tweak the target to include ```powershell``` before the ps1 filename... 
+2. example full shorcut command line: ```C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -WindowStyle Hidden \\beejquad\Dev\_PersonalProjects\PoShSlideshow\PoShSlideshow.ps1 -photoPath \\beejquad\photos -idleTimeout 2```
 1. select Run: <kbd>Minimized</kbd> to make script launch more polished
 2. add ```-WindowStyle Hidden``` after powershell.exe on target command line for further polish
 1. then hit the <kbd>Advanced</kbd> button and select <kbd>Run as administrator</kbd> - *this is only required for the ``` powercfg /requests``` used to identify running video and avoid starting slideshow after user input idle timeout (wouldn't mind hearing a slicker approach???)*
