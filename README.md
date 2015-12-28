@@ -42,4 +42,4 @@ Simply target a local/LAN folder of images.
 
 #### Wishlist
 
-* show videos as well - thinking VLC convenient... would need to pause image display loop and figure out how to recognize when VLC was done playing... would be nice not to keep launching new VLC instance vs reusing 
+* [done] <s>show videos as well - thinking VLC convenient</s>
