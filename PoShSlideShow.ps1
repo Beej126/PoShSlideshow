@@ -374,7 +374,7 @@ if (!(test-path $folderCacheFile)) {
   showBalloon "Creating folder cache: $folderCacheFile"
   try {
     #nugget: -ExpandProperty prevents ellipsis on long strings
-    $folders = dir -Recurse -Directory $photoPath -Exclude .* | select @{Name="lastShown"; expression={[datetime]0}}, @{Name="path"; expression={$_.FullName}}
+    $folders = dir -Directory -Recurse -Exclude .* -Path $photoPath | select @{Name="lastShown"; expression={[datetime]0}}, @{Name="path"; expression={$_.FullName}}
     $folders | Export-Csv $folderCacheFile
   }
   catch {
@@ -402,15 +402,25 @@ $script:timerAnimate.add_Tick({
         "showImage" {
             $script:timerAnimate.Stop()
 
+            <# _   _               _       _   _            _                __ 
+              | | | | ___ _ __ ___( )___  | |_| |__   ___  | |__   ___  ___ / _|
+              | |_| |/ _ \ '__/ _ \// __| | __| '_ \ / _ \ | '_ \ / _ \/ _ \ |_ 
+              |  _  |  __/ | |  __/ \__ \ | |_| | | |  __/ | |_) |  __/  __/  _|
+              |_| |_|\___|_|  \___| |___/  \__|_| |_|\___| |_.__/ \___|\___|_|    
+            ######################################################################>
+
             #get next random folder... that we haven't seen for XX days
-            do { $folder = $folders | random } until ($folder.lastShown -lt [DateTime]::UtcNow.AddMonths(-1) )
+            $skipCount = 0
+            do { $folder = $folders | random; $skipCount++ } until ($folder.lastShown -lt [DateTime]::UtcNow.AddMonths(-1) -or $skipCount -eq $folders.Count )
             $folder.lastShown = [DateTime]::UtcNow
 
+            #get next randome file
             #nugget: http://stackoverflow.com/questions/790796/confused-with-include-parameter-of-the-get-childitem-cmdlet
+            #there's an interesting interplay between -filter, -include and -recurse...
+            #-filter only applies to a single extension, so we need to use -include (less performant since it scans the whole folder but we don't expect that many files per folder)
+            #the wildcard on end of path allows the -include to apply to the contents... otherwise the -include operates on the path vs the contents
             #-recurse would basically work without the wildcard tacked on to the path... but then it digs into subfolders undesirably for this use case
-            #adding the wildcard allows the -include to apply to the contentss... otherwise the -include operates on the path vs the contents
-            #-filter is another option, but it only applies to a single extension
-            $script:randomFile = gci $folder.path -File | random 
+            $script:randomFile = gci -Path "$($folder.path)\*" -File -Include @("*.jpg", "*.mp4", "*.mov", "*.avi") | random 
             $script:filesShown.Add($script:randomFile.FullName)
             $script:rewindIndex = ($script:filesShown.Count - 1)
             #$script:debugLabel.Text = $script:rewindIndex
