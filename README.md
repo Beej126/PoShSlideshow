@@ -10,6 +10,7 @@ Simply target a local/LAN folder of images.
 * **task tray icon** to start slideshow on demand...
 * otherwise kicks off after user defined **idle timeout** (honors running video)
 * **good randomization** - one soon realizes pleasantly random photos are the key want of a photo slideshow ... fortunately PowerShell has a readily available _random_ commandlet that seems to do quite well
+  * persists "lastShown" for each folder and avoids re-showing within XX days (currently 1 month)
 * image **fade-in and slide** for ambience
 * several **hotkeys** functional:
 	* <kbd>o</kbd>pen current image folder
