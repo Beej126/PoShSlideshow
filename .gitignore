@@ -211,3 +211,9 @@ GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
 /Slideshow.lnk
+
+# operating system files
+thumbs.db
+desktop.ini
+.ds_store
+._.DS_Store

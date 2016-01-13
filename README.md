@@ -45,3 +45,4 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 #### Wishlist
 
 * [done] <s>show videos as well - thinking VLC convenient</s>
+* add new param to csv list folders always shown (i.e. not subject to "lastShown" exclusion logic)

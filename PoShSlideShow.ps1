@@ -25,10 +25,14 @@ $notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSComma
 #$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
 $notifyIcon.Visible = $true
 
+function saveFolderCache {
+  $folders | export-csv $folderCacheFile -Encoding Unicode #nugget: without -encoding sometimes yielded binary garbage 
+}
+
 function cleanExit {
   $notifyIcon.Visible = $false
   #save the updated folder datestamps to be reloaded next time we start up and keep our randomization fresh
-  $folders | export-csv $folderCacheFile -Encoding Unicode #nugget: without -encoding sometimes yielded binary garbage 
+  saveFolderCache
   [System.Windows.Forms.Application]::Exit()
   exit
 }
@@ -324,6 +328,42 @@ function TogglePause {
   if ($script:timerAnimate.Enabled) { pauseAnimation } else {$script:timerAnimate.Start()};
 }
 
+filter IndexPrefix {
+  param([string]$delimiter)
+  $index++
+  "$index$delimiter$($_.replace("$photoPath\", ''))"
+}
+
+function getFolders {
+  return dir -Directory -Recurse -Exclude .* -Path $photoPath | select -ExpandProperty FullName
+}
+
+function createFolderStructs {
+  $input | select @{Name="lastShown"; expression={[datetime]0}}, @{Name="path"; expression={$_}}
+}
+
+function updateFolderCache {
+    showBalloon "Updating folder cache..."
+    $script:existingFolders = $script:folders | select -ExpandProperty path
+    $script:current = getFolders
+    #nugget: "where not exists pattern"
+    $script:newFolders = $script:current |? {$script:existingFolders -notcontains $_} 
+    $script:deleted = $script:folders |? {$script:current -notcontains $_.path} | select -ExpandProperty path #only for display
+    #add newly found folders to the existing collection
+    $script:folders += ($script:newFolders | createFolderStructs)
+    #delete those in collection not found in physical path by creating new list only including those found (since default pipeline behavior creates unmutable arrays)
+    $script:folders = $script:folders |? {$script:current -contains $_.path}
+
+    saveFolderCache
+    $script:pathMenu.Text = pathMenuText
+
+    $wshell.Popup(
+    "Added:`n   $(@("{none}", ($script:newFolders -join "`n   "))[$script:newFolders.Count -gt 0])`n" +`
+    "`nDeleted:`n   $(@("{none}", ($script:deleted -join "`n   "))[$script:deleted.Count -gt 0])`n" +`
+    "`nTotal: " + $script:folders.Count
+    , 0 <#timeout seconds#>, "Folder Cache Updates:", 4096 <#TopMost#> + 64 <#Information icon#>) 
+}
+
 $commands = {
 
     $keyEventArgs = $_
@@ -358,8 +398,28 @@ $commands = {
         "Right" { forward }
         "Space" { TogglePause }
 
+        "D" {
+          $wshell.Popup("last few:`n`n$(($script:filesShown | select -last 20 | IndexPrefix ". ") -join "`n")", 0, "Debug:", 4096 <#TopMost#> + 64 <#Information icon#>)
+          $script:timerAnimate.Start()
+        }
+
+        "U" { updateFolderCache }
+
+        "F" { $script:currentFolder.lastShown = "1/1/1900"; showBalloon "$($script:currentFolder.path) added to favorites"; saveFolderCache }
+
         default {
-            $wshell.Popup("Keycode: $keycode`n`nESC - Exit`nO - Open folder`rC - [C]opy to 'My Pictures'`rM - Open [M]y Pictures folder`rR - Rotate`rLeft Cursor - Previous image`rRight Cursor - Next image`rSpace - Pause", 3 <#timeout seconds#>, "Usage:", 4096 <#TopMost#> + 64 <#Information icon#>) 
+            $wshell.Popup("Keycode: $keycode`n`n" +`
+              "ESC - Exit`nO - Open folder`n" +`
+              "C - [C]opy to 'My Pictures'`n" +`
+              "M - Open [M]y Pictures folder`n" +`
+              "R - Rotate`nLeft Cursor - Previous image`n" +`
+              "Right Cursor - Next image`n" +`
+              "Space - Pause`n" +`
+              "D - Debug - list last few showings`n" +`
+              "U - update folder cache with additions & deletions - preserves existing timestamps`n" +`
+              "F - mark folder as favorite"
+              , 3 <#timeout seconds#>, "Usage:", 4096 <#TopMost#> + 64 <#Information icon#>) 
+            
             $script:timerAnimate.Start()
 		}
     }
@@ -374,7 +434,7 @@ if (!(test-path $folderCacheFile)) {
   showBalloon "Creating folder cache: $folderCacheFile"
   try {
     #nugget: -ExpandProperty prevents ellipsis on long strings
-    $folders = dir -Directory -Recurse -Exclude .* -Path $photoPath | select @{Name="lastShown"; expression={[datetime]0}}, @{Name="path"; expression={$_.FullName}}
+    $newfolders = getFolders | createFolderStructs
     $folders | Export-Csv $folderCacheFile
   }
   catch {
@@ -409,18 +469,33 @@ $script:timerAnimate.add_Tick({
               |_| |_|\___|_|  \___| |___/  \__|_| |_|\___| |_.__/ \___|\___|_|    
             ######################################################################>
 
-            #get next random folder... that we haven't seen for XX days
-            $skipCount = 0
-            do { $folder = $folders | random; $skipCount++ } until ($folder.lastShown -lt [DateTime]::UtcNow.AddMonths(-1) -or $skipCount -eq $folders.Count )
-            $folder.lastShown = [DateTime]::UtcNow
+            do {
 
-            #get next randome file
-            #nugget: http://stackoverflow.com/questions/790796/confused-with-include-parameter-of-the-get-childitem-cmdlet
-            #there's an interesting interplay between -filter, -include and -recurse...
-            #-filter only applies to a single extension, so we need to use -include (less performant since it scans the whole folder but we don't expect that many files per folder)
-            #the wildcard on end of path allows the -include to apply to the contents... otherwise the -include operates on the path vs the contents
-            #-recurse would basically work without the wildcard tacked on to the path... but then it digs into subfolders undesirably for this use case
-            $script:randomFile = gci -Path "$($folder.path)\*" -File -Include @("*.jpg", "*.mp4", "*.mov", "*.avi") | random 
+                #get next random folder... that we haven't seen for XX days... 
+                $lookBackDays = -12
+                do {
+                  $lookBackDays += 2 # progressively relaxing freshness if none found
+                  $freshies = $folders | where { $_.lastShown -lt [DateTime]::UtcNow.AddDays($lookBackDays) }
+                }
+                until ($freshies.Count -gt 0 -or $lookBackDays -eq 0)
+
+                $script:currentFolder = @($folders, $freshies)[$freshies.Count -gt 0] | random #should never happen that max lastShown is somehow greater than "now" but just in case, bail out and pull from the whole list
+                if ($script:currentFolder.lastShown -eq "1/1/1900") {} #skip update if this is a favorite, favorite flagged by this special datestamp
+                elseif ($script:currentFolder.path -like "*unfiled*") { $script:currentFolder.lastShown = "1/1/1900" -as [datetime] } #any folder with "unfiled" in the name, never gets datestamped, always "fresh" in the rotation
+                else { $script:currentFolder.lastShown = [DateTime]::UtcNow }
+
+                #get next randome file
+                #nugget: http://stackoverflow.com/questions/790796/confused-with-include-parameter-of-the-get-childitem-cmdlet
+                #there's an interesting interplay between -filter, -include and -recurse...
+                #-filter only applies to a single extension, so we need to use -include (less performant since it scans the whole folder but we don't expect that many files per folder)
+                #the wildcard on end of path allows the -include to apply to the contents... otherwise the -include operates on the path vs the contents
+                #-recurse would basically work without the wildcard tacked on to the path... but then it digs into subfolders undesirably for this use case
+                $showFiles = gci -Path "$($script:currentFolder.path)\*" -File -Include @("*.jpg", "*.mp4", "*.mov", "*.avi")
+            }
+            until ($showFiles.count -gt 0) #account for folders without any viewable files
+
+            $script:randomFile = $showFiles | random
+
             $script:filesShown.Add($script:randomFile.FullName)
             $script:rewindIndex = ($script:filesShown.Count - 1)
             #$script:debugLabel.Text = $script:rewindIndex
@@ -465,10 +540,14 @@ $notifyIcon.add_MouseDown( {
   [System.Windows.Forms.NotifyIcon].GetMethod("ShowContextMenu", [System.Reflection.BindingFlags] "NonPublic, Instance").Invoke($script:notifyIcon, $null)
 })
 
+function pathMenuText {
+  return "Path: $script:photoPath ({0} folders)" -f $script:folders.Count
+}
+
 $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $contextMenu.ShowImageMargin = $false
 $notifyIcon.ContextMenuStrip = $contextMenu
-$contextMenu.Items.Add( "Path: $photoPath", $null, $null ) | Out-Null
+$script:pathMenu = $contextMenu.Items.Add( $(pathMenuText), $null, { updateFolderCache } ) 
 $contextMenu.Items.Add( "E&xit", $null, { cleanExit } ) | Out-Null
 
 $enableMenuItem = $contextMenu.Items.Add( "Disable Idle", $null, {
