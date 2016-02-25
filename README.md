@@ -45,3 +45,6 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 #### Wishlist
 
 * [done] <s>show videos as well - thinking VLC convenient</s>
+* Right mouse menu same as hot keys
+* Hide button
+* Email - on screen keyboard? fire gmail to get contacts
