@@ -4,6 +4,7 @@ Photo slideshow implemented in PowerShell -> Windows Forms
 
 Simply target a (nested) folder of images. Local or LAN UNC path supported.
 &nbsp;
+&nbsp;
 #### Features:
 ![](http://2.bp.blogspot.com/-XWNHk4bUjmw/VnZCbx0p_RI/AAAAAAAAR6Y/hjDvvY8mkqE/s1600/Screen%2BShot%2B2015-12-19%2Bat%2B9.36.43%2BPM.png)
 
