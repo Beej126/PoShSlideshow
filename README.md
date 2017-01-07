@@ -45,7 +45,8 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 
 #### Wishlist
 
-* [done] <s>show videos as well - thinking VLC convenient</s>
-* Right mouse menu same as hot keys
-* Hide button
-* Email - on screen keyboard? fire gmail to get contacts
+1. [done] <s>show videos as well - thinking VLC convenient</s>
+1. Right mouse to show commands menu same as keyboard
+1. Implement a Hide button akin to the forward back buttons
+1. Email current photo - on screen keyboard? fire gmail to get contacts
+1. [blog request](http://www.beejblog.com/2015/12/powershell-photo-slideshow.html#comment-424): Automatically update folder cache upon new items... to be clear, current approach automatically recognizes new files in existing folders since it only caches the list of folders from which it randomly grabs the next image. Thoughts - Seems pretty straightforward to throw in [PowerShell FileWatcher](http://stackoverflow.com/a/29067433/813599) configured to call the existing `updateFolderCache` function.
