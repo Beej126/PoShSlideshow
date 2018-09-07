@@ -16,7 +16,10 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 * several **hotkeys** functional:
 	* <kbd>o</kbd>pen current image folder
 	* <kbd>c</kbd>opy current image to _My Photos_
+	* <kbd>f</kbd>avorites - add folder to favorites. show more frequently.
 	* <kbd>r</kbd>otate current image (and save) - *generally honors EXIF rotation metadata where present, this option allows for manual correction where EXIF is missing*
+	* <kbd>u</kbd>pdate folder cache
+	* <kbd>d</kbd>debug - show last few random files selected
 	* reverse to previously shown photo (<kbd>left cursor</kbd>)
 	* pause/play (<kbd>space</kbd>)
 	* hotkey legend pops up on any other keypress
