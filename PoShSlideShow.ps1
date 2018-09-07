@@ -1,17 +1,36 @@
-﻿param(
+param(
   [string]$photoPath = "D:\Photos\_Main_Library",
   [string]$idleTimeout = 2 #minutes
 )
+
+$Error.Clear()
+
+& $PSScriptRoot\Win32.ps1 #bunch of win32 api exports
+
+#save MainWindowHandle so we can hide explicitly here and keep available for showing at end for troubleshooting, IIF PowerShell errors were emitted 
+#nugget: don't use -WindowStyle Hidden on the ps1 shortcut, it prevents retrieval of main MainWindowHandle here...
+$process = Get-Process -Id $pid
+$poShConsoleHwnd = $process.MainWindowHandle
+if ($process.ProcessName -eq "powershell_ise") { $poShConsoleHwnd=0 }
+function showPoShConsole {
+  param([bool]$show = $true)
+  
+  if ($show -and [Win32]::IsWindowVisible($poShConsoleHwnd)) { $show=$false }
+
+  [Win32]::ShowWindowAsync($poShConsoleHwnd, @([Win32]::SW_HIDE, [Win32]::SW_SHOWNORMAL)[$show]) | Out-Null
+  [Win32]::SetForegroundWindow($poShConsoleHwnd) | Out-Null
+}
+
+showPoShConsole $false
+
 
 <#
 Credit: Initial idea and windows forms screen code from here: https://github.com/adamdriscoll/PoshInternals
 #>
 
+# bail out if this same script is already running
 if ((Get-WmiObject Win32_Process -Filter "Name like 'powershell%' AND CommandLine like '%$(split-path $PSCommandPath -leaf)'").Count -gt 1) {
-    #$existingWindow = [win32]::FindWindowByCaption("PoShSlideShow")
-    #[Win32]::SetForegroundWindow($existingWindow)
-    #[Win32]::ShowWindow($existingWindow, 9 <#SW_SHOW#>)
-    exit
+  exit
 }
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -54,28 +73,8 @@ public class DoubleBufferedForm : System.Windows.Forms.Form
     }
 }
 
-public class Win32
-{
-  [DllImport("user32.dll")]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-  [DllImport("user32")]
-  public static extern int SetForegroundWindow(int hwnd);
-
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-  public static extern IntPtr FindWindow(String sClassName, String sWindowCaption);
-
-  [DllImport("user32.dll", EntryPoint = "FindWindow", SetLastError = true)]
-  private static extern IntPtr FindWindowByCaptionInternal(IntPtr ZeroOnly, string sWindowCaption);
-  public static IntPtr FindWindowByCaption(String sWindowCaption)
-  {
-    return FindWindowByCaptionInternal(IntPtr.Zero, sWindowCaption);
-  }
-}
-
 //from: http://stackoverflow.com/questions/15845508/get-idle-time-of-machine
-public static class UserInput {
+public static class IdleHelper {
 
     [DllImport("user32.dll", SetLastError=false)]
     private static extern bool GetLastInputInfo(ref LASTINPUTINFO plii);
@@ -136,6 +135,10 @@ $script:rotationMap["8"] = [Drawing.RotateFlipType]::Rotate270FlipNone
 $script:filesShown = New-Object collections.arraylist
 $script:rewindIndex = ($script:filesShown.Count - 1)
 
+function isVideo($fileInfoObj) {
+  return $fileInfoObj.Extension -ne ".jpg" -and $fileInfoObj.Extension -ne ".png"
+}
+
 function showImage() {
   $script:img = $null
   if ($script:pictureBox.Image -ne $null) { $script:pictureBox.Image.Dispose() }
@@ -143,12 +146,13 @@ function showImage() {
   $script:pictureBox.Hide()
 
   #video?
-  if ($script:randomFile.Extension -ne ".jpg") {
+  if (isVideo($script:randomFile)) {
     $script:frmFade.Opacity = 0.001
-    start-process -WindowStyle Hidden -wait -filepath vlc -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
+    start-process -WindowStyle Hidden -wait -filepath "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe" -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
     $script:frmFade.Opacity = 1
     $script:frmFade.BringToFront()
-    #$script:frmFade.Activate()
+    #doesn't give focus to enabled keyboard events - $script:frmFade.Activate()
+    [Win32]::SetFocus($script:frmFade.Handle)
     $script:timerAnimate.Start()
   }
 
@@ -257,7 +261,7 @@ $script:pictureBox.Bounds = $frmImage.Bounds
 $script:idleTimer = New-Object System.Windows.Forms.Timer
 $script:idleTimer.Interval = 30000
 $script:idleTimer.add_Tick({
-  if ([UserInput]::IdleTime.TotalMinutes -gt $script:idleTimeout) {
+  if ([IdleHelper]::IdleTime.TotalMinutes -gt $script:idleTimeout) {
       #pause timer since this is a long retrieval
     $script:idleTimer.Stop()
     #only start if there's nothing currently running on the display
@@ -285,7 +289,8 @@ function ToggleDisplay {
 
     $script:frmFade.Opacity = 1
     $script:frmFade.Show()
-    $script:frmFade.Activate()
+    #doesn't set focus to enable keyboard event handlers - $script:frmFade.Activate()
+    [Win32]::SetFocus($script:frmFade.Handle)
     $script:frmImage.Show()
     $script:frmFade.BringToFront()
 
@@ -297,8 +302,8 @@ function ToggleDisplay {
 }
 
 function pauseAnimation {
-  $script:frmFade.Opacity = 0.05
   $script:timerAnimate.Stop()
+  $script:frmFade.Opacity = 0.05
 }
 
 function reverse {
@@ -371,9 +376,11 @@ $commands = {
     $keycode = [string]($keyEventArgs.KeyCode)
     $keycode = $keycode.Substring(0, [math]::Min(6, $keycode.Length))
 
-    if ($keycode -eq "Volume") {return}
+    if ($keycode -eq "Volume" -or $keycode -like "*win*") {return}
 
-    pauseAnimation
+    $wasPaused = -not $script:timerAnimate.Enabled
+
+    pauseAnimation #just makes sense to pause on nearly every keystroke
 
     #debug: $keyEventArgs | Format-List | Out-Host
 
@@ -396,7 +403,16 @@ $commands = {
 
         "Left" { reverse } 
         "Right" { forward }
-        "Space" { TogglePause }
+        "Space" { if ($wasPaused) {$script:timerAnimate.Start()} }
+
+        "D" {
+          $wshell.Popup("last few:`n`n$(($script:filesShown | select -last 20 | IndexPrefix ". ") -join "`n")", 0, "Debug:", 4096 <#TopMost#> + 64 <#Information icon#>)
+          $script:timerAnimate.Start()
+        }
+
+        "U" { updateFolderCache }
+
+        "F" { $script:currentFolder.lastShown = "1/1/1900"; showBalloon "$($script:currentFolder.path) added to favorites"; saveFolderCache }
 
         "D" {
           $wshell.Popup("last few:`n`n$(($script:filesShown | select -last 20 | IndexPrefix ". ") -join "`n")", 0, "Debug:", 4096 <#TopMost#> + 64 <#Information icon#>)
@@ -481,7 +497,11 @@ $script:timerAnimate.add_Tick({
 
                 $script:currentFolder = @($folders, $freshies)[$freshies.Count -gt 0] | random #should never happen that max lastShown is somehow greater than "now" but just in case, bail out and pull from the whole list
                 if ($script:currentFolder.lastShown -eq "1/1/1900") {} #skip update if this is a favorite, favorite flagged by this special datestamp
+<<<<<<< HEAD
                 elseif ($script:currentFolder.path -like "*unfiled*") { $script:currentFolder.lastShown = "1/1/1900" -as [datetime] } #any folder with "unfiled" in the name, never gets datestamped, always "fresh" in the rotation
+=======
+                #elseif ($script:currentFolder.path -like "*unfiled*") { $script:currentFolder.lastShown = "1/1/1901" -as [datetime] } #any folder with "unfiled" in the name, never gets datestamped, always "fresh" in the rotation
+>>>>>>> 5f89991c538ea933e8bdd563689d8a20ffba71db
                 else { $script:currentFolder.lastShown = [DateTime]::UtcNow }
 
                 #get next randome file
@@ -559,4 +579,4 @@ $playMenu = $contextMenu.Items.Add( "Play", $null, { ToggleDisplay } )
 
 $script:idleTimer.Start()
 [System.Windows.Forms.Application]::Run()
-if ($Error -ne $null) { showBalloon $Error "error" }
+if ($Error -and $poShConsoleHwnd -ne 0) { showPoShConsole; pause }
