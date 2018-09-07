@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$photoPath = "D:\Photos\_Main_Library",
   [string]$idleTimeout = 2 #minutes
 )
@@ -62,7 +62,7 @@ try {
 Add-Type -WarningAction SilentlyContinue -ReferencedAssemblies @("System.Windows.Forms", "System.Drawing") @'
 using System;
 using System.Windows.Forms;
-//using System.Drawing;
+using System.Drawing;
 using System.Runtime.InteropServices;
 
 public class DoubleBufferedForm : System.Windows.Forms.Form
@@ -107,6 +107,15 @@ public static class IdleHelper {
             return lii.dwTime;
         }
     }
+
+    //try this next: https://www.codeproject.com/Articles/39219/A-Beginner-s-Primer-on-Drawing-Graphics-using-the
+    public static void BitmapMoveXY(IntPtr hwnd, int x, int y) {
+
+      using (Graphics graphics = Graphics.FromHwnd(hwnd))
+      {
+        graphics.TranslateTransform(x, y);
+      }
+    }
 }
 '@} catch {$Error.Clear()}
 
@@ -148,7 +157,7 @@ function showImage() {
   #video?
   if (isVideo($script:randomFile)) {
     $script:frmFade.Opacity = 0.001
-    start-process -WindowStyle Hidden -wait -filepath "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe" -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
+    start-process -wait -filepath "C:\Program Files\VideoLAN\VLC\vlc.exe" -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
     $script:frmFade.Opacity = 1
     $script:frmFade.BringToFront()
     #doesn't give focus to enabled keyboard events - $script:frmFade.Activate()
@@ -497,11 +506,7 @@ $script:timerAnimate.add_Tick({
 
                 $script:currentFolder = @($folders, $freshies)[$freshies.Count -gt 0] | random #should never happen that max lastShown is somehow greater than "now" but just in case, bail out and pull from the whole list
                 if ($script:currentFolder.lastShown -eq "1/1/1900") {} #skip update if this is a favorite, favorite flagged by this special datestamp
-<<<<<<< HEAD
-                elseif ($script:currentFolder.path -like "*unfiled*") { $script:currentFolder.lastShown = "1/1/1900" -as [datetime] } #any folder with "unfiled" in the name, never gets datestamped, always "fresh" in the rotation
-=======
                 #elseif ($script:currentFolder.path -like "*unfiled*") { $script:currentFolder.lastShown = "1/1/1901" -as [datetime] } #any folder with "unfiled" in the name, never gets datestamped, always "fresh" in the rotation
->>>>>>> 5f89991c538ea933e8bdd563689d8a20ffba71db
                 else { $script:currentFolder.lastShown = [DateTime]::UtcNow }
 
                 #get next randome file
@@ -540,6 +545,7 @@ $script:timerAnimate.add_Tick({
                 if ($script:slideCount % 2 -eq 0) {
                     $script:pictureBox.Left += $script:slideDirection[0]
                     $script:pictureBox.Top += $script:slideDirection[1]
+                    #$script:pictureBox.Image = [IdleHelper]::BitmapMoveXY($script:pictureBox.Handle, $script:slideDirection[0], $script:slideDirection[1])
                 }
             }
             else {
