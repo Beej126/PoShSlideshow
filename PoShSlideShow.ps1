@@ -1,9 +1,11 @@
 ﻿param(
-  [string]$photoPath = "D:\Photos\_Main_Library",
+  [string]$photoPath = "\\beejquad\photos",
   [string]$idleTimeout = 2 #minutes
 )
 
 $Error.Clear()
+
+echo "`$photoPath: $photoPath" 
 
 & $PSScriptRoot\Win32.ps1 #bunch of win32 api exports
 
@@ -38,20 +40,21 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.WIndows.Forms.Application]::EnableVisualStyles()
 try { [System.WIndows.Forms.Application]::SetCompatibleTextRenderingDefault($false) } catch { $Error.Clear() }
 
-#fire up the task tray icon as quickly as possible to give the allusion of progress :)
+#fire up the task tray icon as quickly as possible to give the illusion of progress :)
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Icon = New-Object System.Drawing.Icon "$(Split-Path -parent $PSCommandPath)\icon.ico"
 #$notifyIcon.Icon = New-Object System.Drawing.Icon ".\icon.ico"
 $notifyIcon.Visible = $true
+#$notifyIcon.ShowBalloonTip(1000, "test", "test", "Info")
 
 function saveFolderCache {
   $folders | export-csv $folderCacheFile -Encoding Unicode #nugget: without -encoding sometimes yielded binary garbage 
 }
 
 function cleanExit {
-  $notifyIcon.Visible = $false
   #save the updated folder datestamps to be reloaded next time we start up and keep our randomization fresh
   saveFolderCache
+  $notifyIcon.Visible = $false
   [System.Windows.Forms.Application]::Exit()
   exit
 }
@@ -123,12 +126,11 @@ function isElevated {
   return (new-object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function showBalloon { param($message, $icon)
+function showBalloon {
+  param($message, $icon)
   $script:notifyIcon.ShowBalloonTip(5000, "Slideshow", $message + ("", " - aborting")[$icon -eq "error"], ("Info", $icon)[!!($icon)])
-  if ($icon -eq "error") { start-sleep 5; cleanExit }
+  if ($icon -eq "error") { echo "aborting"; start-sleep 5; cleanExit }
 }
-
-if (!(isElevated)) { showBalloon "Not running under elevated permissions" "error" }
 
 #from here: http://automagical.rationalmind.net/2009/08/25/correct-photo-orientation-using-exif/
 $script:rotationMap = @{}
@@ -157,7 +159,7 @@ function showImage() {
   #video?
   if (isVideo($script:randomFile)) {
     $script:frmFade.Opacity = 0.001
-    start-process -wait -filepath "C:\Program Files\VideoLAN\VLC\vlc.exe" -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
+    start-process -wait -filepath "vlc.exe" -ArgumentList "--fullscreen --video-on-top --play-and-exit `"$($randomFile.FullName)`""
     $script:frmFade.Opacity = 1
     $script:frmFade.BringToFront()
     #doesn't give focus to enabled keyboard events - $script:frmFade.Activate()
@@ -414,11 +416,6 @@ $commands = {
         "Right" { forward }
         "Space" { if ($wasPaused) {$script:timerAnimate.Start()} }
 
-        "D" {
-          $wshell.Popup("last few:`n`n$(($script:filesShown | select -last 20 | IndexPrefix ". ") -join "`n")", 0, "Debug:", 4096 <#TopMost#> + 64 <#Information icon#>)
-          $script:timerAnimate.Start()
-        }
-
         "U" { updateFolderCache }
 
         "F" { $script:currentFolder.lastShown = "1/1/1900"; showBalloon "$($script:currentFolder.path) added to favorites"; saveFolderCache }
@@ -427,10 +424,6 @@ $commands = {
           $wshell.Popup("last few:`n`n$(($script:filesShown | select -last 20 | IndexPrefix ". ") -join "`n")", 0, "Debug:", 4096 <#TopMost#> + 64 <#Information icon#>)
           $script:timerAnimate.Start()
         }
-
-        "U" { updateFolderCache }
-
-        "F" { $script:currentFolder.lastShown = "1/1/1900"; showBalloon "$($script:currentFolder.path) added to favorites"; saveFolderCache }
 
         default {
             $wshell.Popup("Keycode: $keycode`n`n" +`
@@ -455,6 +448,7 @@ $script:frmFade.add_KeyDown($commands)
 $wshell = New-Object -ComObject Wscript.Shell -ErrorAction Stop
 
 $folderCacheFile = "$photoPath\AllFolders_$(("shared", "local")[$photoPath -like "*:*"]).txt"
+showBalloon "Creating folder cache: $folderCacheFile"
 if (!(test-path $folderCacheFile)) {
   showBalloon "Creating folder cache: $folderCacheFile"
   try {
@@ -468,6 +462,11 @@ if (!(test-path $folderCacheFile)) {
 }
 else {
   $folders = import-csv $folderCacheFile | select @{Name="lastShown"; expression={[datetime]$_.lastShown}},path
+}
+
+if (!(isElevated)) {
+  echo "Not running under elevated permissions"
+  showBalloon "Not running under elevated permissions" "error"
 }
 
 #fade and slide timer
