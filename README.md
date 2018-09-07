@@ -1,11 +1,11 @@
-#### Project Description
+# Project Description
 
 Photo slideshow implemented in PowerShell -> Windows Forms
 
 Simply target a (nested) folder of images. Local or LAN UNC path supported.
 &nbsp;<br/>
 &nbsp;<br/>
-#### Features:
+# Features:
 ![](http://2.bp.blogspot.com/-XWNHk4bUjmw/VnZCbx0p_RI/AAAAAAAAR6Y/hjDvvY8mkqE/s1600/Screen%2BShot%2B2015-12-19%2Bat%2B9.36.43%2BPM.png)
 
 * **task tray icon** to start slideshow on demand...
@@ -31,7 +31,7 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 * plays videos via VLC
 * open to modification - it's just PowerShell :) no compiling tools required
 
-#### Install - basically just launch the ps1... here's some tips:
+# Install - basically just launch the ps1... here's some tips:
 1. only the ps1 and ico files are needed, download them to a folder
 2. ensure VLC.exe is in your path
 3. (see screenshot below) **create a shortcut** to the ps1 and tweak the target to include ```powershell``` before the ps1 filename... 
@@ -46,7 +46,7 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 
 ![](http://3.bp.blogspot.com/-fON1N7pNVps/VnbndLY3ipI/AAAAAAAAR7A/p1T8oja9fso/s1600/Screen%2BShot%2B2015-12-20%2Bat%2B9.26.42%2BAM.png)
 
-#### Wishlist
+# Wishlist
 
 * [done] <s>show videos as well - thinking VLC convenient</s>
 * add new param to csv list folders always shown (i.e. not subject to "lastShown" exclusion logic)
