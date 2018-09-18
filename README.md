@@ -44,7 +44,7 @@ Simply target a (nested) folder of images. Local or LAN UNC path supported.
 	* add ```-idleTimeout 2``` to the end of the shortcut path - units are in minutes
 1. Copy this shortcut to ```shell:startup``` in Windows FileExplorer to automatically launch this script when you login to your desktop
 
-![](http://3.bp.blogspot.com/-fON1N7pNVps/VnbndLY3ipI/AAAAAAAAR7A/p1T8oja9fso/s1600/Screen%2BShot%2B2015-12-20%2Bat%2B9.26.42%2BAM.png)
+![](https://user-images.githubusercontent.com/6301228/45711239-c5c19f00-bb3d-11e8-967c-a929a3fe5e35.png)
 
 # Wishlist
 
